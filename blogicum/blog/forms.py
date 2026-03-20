@@ -1,29 +1,70 @@
+"""
+Модуль форм Django для приложения 'blog'.
+
+Определяет формы на основе моделей (ModelForm) для создания и редактирования
+комментариев, постов и профилей пользователей. Эти формы используются
+для сбора и валидации пользовательского ввода.
+"""
+
 from django import forms
 
-from blog.models import Comment, Post, User
+# Импортируем необходимые модели из приложения 'blog'.
+from blog.models import Comment, Post
+from django.contrib.auth import get_user_model # Рекомендуемый импорт User
+User = get_user_model()
 
 
 class CommentForm(forms.ModelForm):
+    """
+    Форма для создания и редактирования комментариев.
 
+    Основана на модели Comment и предоставляет поле для ввода текста
+    комментария.
+    """
     class Meta:
-        model = Comment
-        fields = ('text',)
+        """
+        Мета-класс для настройки формы CommentForm.
+        """
+        model = Comment # Эта форма связана с моделью Comment.
+        fields = ('text',) # Какие поля модели будут включены в форму.
 
 
 class PostForm(forms.ModelForm):
+    """
+    Форма для создания и редактирования постов (публикаций).
 
+    Основана на модели Post и предоставляет поля для ввода заголовка,
+    текста, категории, местоположения, даты публикации и изображения.
+    """
     class Meta:
-        model = Post
+        """
+        Мета-класс для настройки формы PostForm.
+        """
+        model = Post # Эта форма связана с моделью Post.
+        # Поля модели, которые НЕ будут включены в форму.
         exclude = ('author',)
+        # Настройка отображения полей формы в HTML.
         widgets = {
             'pub_date': forms.DateTimeInput(
-                format='%Y-%m-%dT%H:%M', attrs={'type': 'datetime-local'}
+                # Формат даты и времени
+                format='%Y-%m-%dT%H:%M',
+                # HTML-инпута как 'datetime-local'.
+                attrs={'type': 'datetime-local'}
             )
         }
 
 
 class ProfileForm(forms.ModelForm):
+    """
+    Форма для редактирования профиля пользователя.
 
+    Основана на стандартной модели User и предоставляет поля для редактирования
+    имени пользователя, имени, фамилии и электронной почты.
+    """
     class Meta:
-        model = User
+        """
+        Мета-класс для настройки формы ProfileForm.
+        """
+        model = User # Эта форма связана с моделью User.
+        # Определяем поля модели User, которые будут включены в форму профиля.
         fields = ('username', 'first_name', 'last_name', 'email')

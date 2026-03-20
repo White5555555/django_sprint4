@@ -1,3 +1,11 @@
+"""
+Админ-панель в приложении blog.
+
+Тут мы регистрируем модели в админ панели и настраиваем
+отображение, редактирование, поиск и фильтрацию для
+управления данными.
+"""
+
 from django.contrib import admin
 
 from blog.models import Category, Comment, Location, Post
@@ -5,65 +13,101 @@ from blog.models import Category, Comment, Location, Post
 
 @admin.register(Post)
 class PostAdmin(admin.ModelAdmin):
+    """
+    Отображение модели Post в админ панели.
+
+    Админы могут управлять публикациями: смотреть
+    менять, искать и фильтровать.
+    """
+    # Какие поля модели Post будут в виде списка в админ панели
     list_display = (
-        'title',
-        'is_published',
-        'category',
-        'author',
-        'location',
-        'text',
-        'pub_date',
-        'created_at',
+        'title',        # Заголовок публикации
+        'is_published', # Статус публикации (опубликовано/скрыто)
+        'category',     # Категория, к которой относится публикация
+        'author',       # Автор публикации
+        'location',     # Местоположение публикации
+        'text',         # Текст публикации (первая часть)
+        'pub_date',     # Дата и время публикации
+        'created_at',   # Дата и время создания записи в базе данных
     )
     list_editable = (
-        'is_published',
-        'category'
+        'is_published', # Можно менять статус публикации
+        'category'      # Можно менять категорию
     )
+    # Поиск по заголовку публикации.
     search_fields = ('title',)
+    # list_filter добавляет фильтры в боковую панель админки.
+    # Можно фильтровать публикации по категории и статусу публикации.
     list_filter = ('category', 'is_published',)
+    # Здесь заголовок публикации будет ссылкой для перехода на страницу
+    # редактирования объекта.
     list_display_links = ('title',)
 
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
+    """
+    Отображение модели Category в админ панели.
+    Управляет категориями: смотреть, редактировать, искать и фильтровать.
+    """
+    # Поля в списке категорий
     list_display = (
-        'title',
-        'is_published',
-        'slug',
-        'description',
-        'created_at',
+        'title',        # Заголовок категории
+        'is_published', # Статус публикации категории
+        'slug',         # Идентификатор для URL
+        'description',  # Описание категории
+        'created_at',   # Дата и время создания записи
     )
+    # Менять статус публикации категории из списка
     list_editable = (
-        'is_published',
+        'is_published', # Можно менять статус публикации категории
     )
+    # Поле для поиска по заголовку категории.
     search_fields = ('title',)
+    # Фильтр по статусу публикации категории.
     list_filter = ('is_published',)
+    # Заголовок - ссылка на страницу редактирования
     list_display_links = ('title',)
 
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
+    """
+    Отображение модели Location в админ панели.
+    Местоположения: смотреть, редактировать, искать и фильтровать.
+    """
+    # Поля в списке местоположений.
     list_display = (
-        'name',
-        'is_published',
-        'created_at',
+        'name',         # Название местоположения
+        'is_published', # Статус публикации местоположения
+        'created_at',   # Дата и время создания записи
     )
+    # Изменение статуса публикации местоположения
     list_editable = (
-        'is_published',
+        'is_published', # Можно менять статус публикации местоположения
     )
+    # Поле для поиска по названию местоположения.
     search_fields = ('name',)
+    # Фильтр по статусу публикации местоположения.
     list_filter = ('is_published',)
+    # Название местоположения - ссылка на страницу редактирования
     list_display_links = ('name',)
 
 
 @admin.register(Comment)
 class CommentAdmin(admin.ModelAdmin):
+    """
+    Модель Comment в админ панели.
+    Может смотреть и искать комментарии.
+    """
+    # Поля в списке комментариев.
     list_display = (
-        'text',
-        'post',
-        'created_at',
-        'author'
+        'text',         # Текст комментария
+        'post',         # Публикация, к которой относится комментарий
+        'created_at',   # Дата и время создания комментария
+        'author'        # Автор комментария
     )
 
 
+# На месте пустых значений в админ панели - 'Не задано'.
 admin.site.empty_value_display = 'Не задано'

@@ -1,146 +1,454 @@
+
+"""
+Модуль представлений (views) для приложения 'blog'.
+
+Содержит функции-представления, которые обрабатывают HTTP-запросы
+и возвращают соответствующие HTTP-ответы. Эти функции отвечают
+за отображение страниц блога, создание, редактирование и удаление
+постов и комментариев, а также управление профилями пользователей.
+"""
+
+# Импорт необходимых декораторов, классов и функций Django.
+# `login_required` - декоратор для защиты представлений,
+# требующих аутентификации.
 from django.contrib.auth.decorators import login_required
+# `User` - модель пользователя. Используется `get_user_model()` в `models.py`,
+# но здесь напрямую `User` из `django.contrib.auth.models`.
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
 
+# Импорт форм, определенных в `blog/forms.py`.
 from blog.forms import CommentForm, PostForm, ProfileForm
+# Импорт моделей из `blog/models.py`.
 from blog.models import Category, Comment, Post
+# Импорт вспомогательных функций из `blog/utils.py`.
 from blog.utils import posts_pagination, query_post
 
 
 def index(request):
+    """
+    Отображает главную страницу блога со списком последних публикаций.
 
-    page_obj = posts_pagination(request, query_post())
+    Посты фильтруются с помощью `query_post` (опубликованные, в прошлом)
+    и затем пагинируются с помощью `posts_pagination`.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/index.html` с объектом
+        страницы постов (`page_obj`) в контексте.
+    """
+    # Получаем QuerySet постов, применяя стандартные фильтры
+    # (опубликованные, с датой в прошлом и опубликованной категорией).
+    posts_queryset = query_post()
+    # Применяем пагинацию к полученному QuerySet. `page_obj` будет содержать
+    # объекты `Post` для текущей страницы и информацию о пагинации.
+    page_obj = posts_pagination(request, posts_queryset)
+    # Формируем контекст для шаблона.
     context = {'page_obj': page_obj}
+    # Отображаем шаблон `index.html`, передавая в него контекст.
     return render(request, 'blog/index.html', context)
 
 
 def category_posts(request, category_slug):
+    """
+    Отображает страницу со списком публикаций, относящихся к конкретной
+     категории.
 
+    Получает категорию по её `slug` и выводит все опубликованные посты
+    этой категории.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        category_slug (str): Уникальный идентификатор категории (slug).
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/category.html` с объектом
+        категории и списком её постов (`page_obj`) в контексте.
+    """
+    # Получаем объект Category по `slug`. Если категория не найдена
+    # или не опубликована, возвращаем ошибка 404.
     category = get_object_or_404(
         Category,
         slug=category_slug,
         is_published=True,
     )
-    page_obj = posts_pagination(
-        request,
-        query_post(manager=category.posts)
-    )
-    context = {'category': category, 'page_obj': page_obj}
+    # Получаем QuerySet постов, относящихся к данной категории.
+    # Используется менеджер `category.posts` для доступа к связанным постам.
+    # `query_post` также применит стандартные фильтры (опубликованные и т.д.).
+    all_category_posts = query_post(manager=category.posts)
+    # Формируем контекст для шаблона.
+    context = {'category': category, 'page_obj': all_category_posts}
+    # Отображаем шаблон `category.html`, передавая в него контекст.
     return render(request, 'blog/category.html', context)
 
 
 def post_detail(request, post_id):
+    """
+    Отображает страницу детального просмотра одной публикации.
 
+    Показывает информацию о посте, а также связанные с ним комментарии
+    и форму для добавления нового комментария. Различная логика применяется
+    для автора поста и обычных пользователей.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/detail.html` с объектом
+        поста, формой комментария и списком комментариев в контексте.
+    """
+    # Получаем объект Post по его ID. Это первичная выборка.
     post = get_object_or_404(Post, id=post_id)
+    # Проверяем, является ли текущий пользователь автором поста.
     if post.author != request.user:
+        # Если пользователь не автор, получаем пост снова,
+        # но через `query_post()`. Это гарантирует, что пост
+        # будет отфильтрован по статусу публикации и дате.
+        # Это предотвращает просмотр неопубликованных/отложенных постов
+        # не-авторами.
         post = get_object_or_404(query_post(), id=post_id)
+    # Получаем все комментарии к данному посту, отсортированные
+    # по дате создания.
     comments = post.comments.order_by('created_at')
+    # Создаем пустой экземпляр формы для комментариев.
     form = CommentForm()
+    # Формируем контекст для шаблона.
     context = {
         'post': post,
         'form': form,
         'comments': comments
     }
+    # Отображаем шаблон `detail.html`, передавая в него контекст.
     return render(request, 'blog/detail.html', context)
 
 
 @login_required
 def create_post(request):
+    """
+    Представление для создания новой публикации.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Обрабатывает как GET (отображение формы), так и POST (отправка формы)
+    запросы.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/create.html` с формой
+        или перенаправление на страницу профиля пользователя после успешного
+        создания поста.
+    """
+    # Создаем экземпляр формы PostForm. Если запрос POST, форма заполняется
+    # данными из запроса (`request.POST`) и загруженными файлами
+    # (`request.FILES`).
+    # Если запрос GET, форма будет пустой.
     form = PostForm(request.POST or None, files=request.FILES or None)
+    # Проверяем валидность отправленной формы.
     if form.is_valid():
+        # Если форма валидна, сохраняем данные, но не коммитим их в базу сразу.
+        # `commit=False` позволяет добавить дополнительные поля перед
+        # сохранением.
         post = form.save(commit=False)
+        # Устанавливаем автора поста как текущего залогиненного пользователя.
         post.author = request.user
+        # Сохраняем пост в базу данных.
         post.save()
+        # Перенаправляем пользователя на его страницу профиля после создания
+        # поста.
         return redirect('blog:profile', request.user)
+    # Если форма не валидна или запрос был GET, формируем контекст
+    # и отображаем шаблон создания поста.
     context = {'form': form}
     return render(request, 'blog/create.html', context)
 
 
 @login_required
 def edit_post(request, post_id):
+    """
+    Представление для редактирования существующей публикации.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Проверяет, что текущий пользователь является автором поста.
+    Обрабатывает как GET, так и POST запросы.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации для редактирования.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/create.html` с предзаполненной
+        формой или перенаправление на страницу детального просмотра поста
+        после успешного редактирования.
+    """
+    # Получаем объект Post по его ID. Если пост не найден, возвращается 404.
     post = get_object_or_404(Post, id=post_id)
+    # Проверяем, что текущий пользователь является автором этого поста.
+    # Если нет, перенаправляем на страницу детального просмотра поста.
     if request.user != post.author:
         return redirect('blog:post_detail', post_id)
+    # Создаем экземпляр формы PostForm, предзаполняя
+    # её данными из существующего
+    # поста (`instance=post`). Если запрос POST, форма заполняется
+    # данными из запроса.
     form = PostForm(request.POST or None, instance=post)
+    # Проверяем валидность отправленной формы.
     if form.is_valid():
+        # Если форма валидна, сохраняем изменения в посте.
         form.save()
+        # Перенаправляем пользователя на страницу детального просмотра
+        # отредактированного поста.
         return redirect('blog:post_detail', post_id)
+    # Если форма не валидна или запрос был GET, формируем контекст
+    # и отображаем шаблон создания
+    # (он же используется для редактирования) поста.
     context = {'form': form}
     return render(request, 'blog/create.html', context)
 
 
 @login_required
 def delete_post(request, post_id):
+    """
+    Представление для удаления публикации.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Проверяет, что текущий пользователь является автором поста.
+    Удаляет пост только после подтверждения (POST-запрос).
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации для удаления.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/create.html`
+        (форма подтверждения)
+        или перенаправление на главную страницу после успешного удаления поста.
+    """
+    # Получаем объект Post по его ID. Если пост не найден, возвращается 404.
     post = get_object_or_404(Post, id=post_id)
+    # Проверяем, что текущий пользователь является автором этого поста.
+    # Если нет, перенаправляем на страницу детального просмотра поста.
     if request.user != post.author:
         return redirect('blog:post_detail', post_id)
+    # Создаем экземпляр формы PostForm, предзаполняя её данными из поста.
+    # Форма используется здесь, вероятно, для отображения информации о посте
+    # и кнопки подтверждения удаления.
     form = PostForm(request.POST or None, instance=post)
+    # Проверяем, является ли запрос методом POST (подтверждение удаления).
     if request.method == 'POST':
+        # Если это POST-запрос, удаляем пост из базы данных.
         post.delete()
+        # Перенаправляем пользователя на главную страницу.
         return redirect('blog:index')
+    # Если запрос был GET (отображение страницы подтверждения удаления),
+    # формируем контекст и отображаем шаблон.
     context = {'form': form}
     return render(request, 'blog/create.html', context)
 
 
 def profile(request, username):
+    """
+    Отображает страницу профиля пользователя со списком его публикаций.
 
+    Показывает информацию о пользователе и его посты, с применением пагинации.
+    Для самого автора могут отображаться и неопубликованные посты.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        username (str): Имя пользователя, чей профиль просматривается.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/profile.html` с объектом
+        профиля пользователя и объектом страницы постов (`page_obj`)
+          в контексте.
+    """
+    # Получаем объект User по имени пользователя (`username`).
+    # Если пользователь не найден, возвращается ошибка 404.
     profile = get_object_or_404(User, username=username)
-    posts = query_post(manager=profile.posts, filters=profile != request.user)
-    page_obj = posts_pagination(request, posts)
-    context = {'profile': profile,
-               'page_obj': page_obj}
+    # Формируем QuerySet постов пользователя.
+    # `manager=profile.posts` - используется обратная связь
+    #  для получения постов автора.
+    # `filters=profile != request.user` - если текущий пользователь не является
+    # владельцем профиля, применяются стандартные фильтры
+    # (`is_published=True` и т.д.).
+    # Если пользователь смотрит свой профиль,
+    # фильтры не применяются, и он видит
+    # все свои посты (включая неопубликованные/отложенные).
+    posts_queryset = query_post(
+        manager=profile.posts,
+        filters=profile != request.user
+    )
+    # Применяем пагинацию к QuerySet постов.
+    page_obj = posts_pagination(request, posts_queryset)
+    # Формируем контекст для шаблона.
+    context = {
+        'profile': profile,
+        'page_obj': page_obj
+    }
+    # Отображаем шаблон `profile.html`, передавая в него контекст.
     return render(request, 'blog/profile.html', context)
 
 
 @login_required
 def edit_profile(request):
+    """
+    Представление для редактирования профиля текущего залогиненного
+    пользователя.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Обрабатывает как GET (отображение формы), так и POST (отправка формы)
+    запросы.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/user.html` с формой
+        или перенаправление на страницу профиля пользователя после успешного
+        редактирования.
+    """
+    # Создаем экземпляр формы ProfileForm, предзаполняя её данными
+    # текущего залогиненного пользователя (`instance=request.user`).
+    # Если запрос POST, форма заполняется данными из `request.POST`.
     form = ProfileForm(request.POST, instance=request.user)
+    # Проверяем валидность отправленной формы.
     if form.is_valid():
+        # Если форма валидна, сохраняем изменения в профиле пользователя.
         form.save()
+        # Перенаправляем пользователя на его страницу профиля.
         return redirect('blog:profile', request.user)
+    # Если форма не валидна или запрос был GET, формируем контекст
+    # и отображаем шаблон `user.html` (для редактирования профиля).
     context = {'form': form}
     return render(request, 'blog/user.html', context)
 
 
 @login_required
 def add_comment(request, post_id):
+    """
+    Представление для добавления нового комментария к публикации.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Обрабатывает только POST-запросы (отправка формы комментария).
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации, к которой добавляется
+        комментарий.
+
+    Returns:
+        Перенаправление на страницу детального просмотра поста
+        после попытки добавления комментария.
+    """
+    # Получаем объект Post по его ID. Если пост не найден, возвращается 404.
     post = get_object_or_404(Post, id=post_id)
+    # Создаем экземпляр формы CommentForm. Если запрос POST, форма заполняется
+    # данными из `request.POST`. Если GET, форма будет пустой.
     form = CommentForm(request.POST or None)
+    # Проверяем валидность отправленной формы.
     if form.is_valid():
+        # Если форма валидна, сохраняем данные, но не коммитим их в базу сразу.
         comment = form.save(commit=False)
+        # Привязываем комментарий к текущему посту.
         comment.post = post
+        # Устанавливаем автора комментария как текущего залогиненного
+        # пользователя.
         comment.author = request.user
+        # Сохраняем комментарий в базу данных.
         comment.save()
+    # Независимо от того, была ли форма валидна или нет,
+    # перенаправляем пользователя на страницу детального просмотра поста.
     return redirect('blog:post_detail', post_id)
 
 
 @login_required
 def edit_comment(request, post_id, comment_id):
+    """
+    Представление для редактирования существующего комментария.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Проверяет, что текущий пользователь является автором комментария.
+    Обрабатывает как GET, так и POST запросы.
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации, к которой относится
+        комментарий.
+        comment_id (int): Первичный ключ (ID) комментария для редактирования.
+
+    Returns:
+        HTTP-ответ, отображающий шаблон `blog/comment.html` с предзаполненной
+        формой или перенаправление на страницу детального просмотра поста
+        после успешного редактирования комментария.
+    """
+    # Получаем объект Comment по его ID. Если комментарий не найден,
+    # возвращается 404.
     comment = get_object_or_404(Comment, id=comment_id)
+    # Проверяем, что текущий пользователь является автором этого комментария.
+    # Если нет, перенаправляем на страницу детального просмотра поста.
     if request.user != comment.author:
         return redirect('blog:post_detail', post_id)
+    # Создаем экземпляр формы CommentForm, предзаполняя её данными из
+    # существующего комментария (`instance=comment`). Если запрос POST,
+    # форма заполняется данными из запроса.
     form = CommentForm(request.POST or None, instance=comment)
+    # Проверяем валидность отправленной формы.
     if form.is_valid():
+        # Если форма валидна, сохраняем изменения в комментарии.
         form.save()
+        # Перенаправляем пользователя на страницу детального просмотра
+        # поста, к которому относится комментарий.
         return redirect('blog:post_detail', post_id)
+    # Если форма не валидна или запрос был GET, формируем контекст
+    # и отображаем шаблон `comment.html` (для редактирования комментария).
     context = {'form': form, 'comment': comment}
     return render(request, 'blog/comment.html', context)
 
 
 @login_required
 def delete_comment(request, post_id, comment_id):
+    """
+    Представление для удаления комментария.
 
+    Требует аутентификации пользователя (`@login_required`).
+    Проверяет, что текущий пользователь является автором комментария.
+    Удаляет комментарий только после подтверждения (POST-запрос).
+
+    Args:
+        request: Объект HTTP-запроса Django.
+        post_id (int): Первичный ключ (ID) публикации, к которой относится
+        комментарий.
+        comment_id (int): Первичный ключ (ID) комментария для удаления.
+
+    Returns:
+        Перенаправление на страницу детального просмотра поста после
+        успешного удаления комментария.
+    """
+    # Получаем объект Comment по его ID. Если комментарий не найден,
+    # возвращается 404.
     comment = get_object_or_404(Comment, id=comment_id)
+    # Получаем объект Post, к которому относится комментарий.
+    # Это нужно для перенаправления обратно на страницу поста.
+    post = get_object_or_404(Post, id=post_id)
+    # Проверяем, что текущий пользователь является автором этого комментария.
+    # Если нет, перенаправляем на страницу детального просмотра поста.
     if request.user != comment.author:
         return redirect('blog:post_detail', post_id)
+
+    # Если запрос был методом POST, это означает подтверждение удаления.
     if request.method == "POST":
-        comment.delete()
+        comment.delete()  # Удаляем комментарий из базы данных.
         return redirect('blog:post_detail', post_id)
-    context = {'comment': comment}
+
+    # Если запрос был GET, отображаем страницу подтверждения удаления.
+    # Для этого может использоваться отдельный шаблон или та же форма
+    # что и для редактирования, но с другой логикой в шаблоне.
+    # Здесь используется тот же шаблон 'blog/comment.html',
+    # что и для редактирования,
+    # но можно передать дополнительный контекст для отображения кнопки
+    # удаления.
+    context = {'comment': comment, 'post': post}
     return render(request, 'blog/comment.html', context)
